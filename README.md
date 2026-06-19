@@ -1,13 +1,16 @@
 # Agent Team Protocol
 
-A lightweight workflow for AI coding agents with sabotage-verified testing.
+Your AI agent wrote tests. They passed.
+But did they actually test anything?
+
+A lightweight workflow for AI coding agents with **sabotage-verified testing**.
 
 > A test is not trusted until it fails when the implementation is intentionally broken.
 
 Prevents three common failures when working with AI coding agents:
 
 - **Scope drift** — the agent modifies files it shouldn't
-- **Fake tests** — tests pass even when the code is broken (tautologies)
+- **Fake-green tests** — tests pass even when the code is broken
 - **Unchecked autonomy** — the agent makes decisions without human oversight
 
 ## How It Works
