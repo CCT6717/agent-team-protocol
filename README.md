@@ -1,111 +1,130 @@
 # Agent Team Protocol
 
-Your AI agent wrote tests. They passed.
-But did they actually test anything?
+Keep AI coding agents honest with copy-paste runbooks.
 
-A lightweight workflow for AI coding agents with **sabotage-verified testing**.
+Use it when an AI agent is about to make a risky change: new feature, refactor, auth, payments, data migration, or production logic.
 
-> A test is not trusted until it fails when the implementation is intentionally broken.
+**No install. No framework. No service. Just Markdown templates and a verification script.**
 
-Prevents three common failures when working with AI coding agents:
-
-- **Scope drift** — the agent modifies files it shouldn't
-- **Fake-green tests** — tests pass even when the code is broken
-- **Unchecked autonomy** — the agent makes decisions without human oversight
-
-## How It Works
-
-### Risk Classification
-
-Tasks are classified by risk level, which determines the workflow:
-
-| Level | Scenario | Flow |
-|-------|----------|------|
-| L0 | Pure questions, no files touched | Answer directly |
-| L1 | Read-only, lookups | Do it, no need to ask |
-| L2 | Small changes (typo, one config line) | Do it, report what changed |
-| L3 | Logic changes, multi-file, features | Plan → Confirm → Execute → Review |
-| L4 | Deletions, deployments, high-risk | Full gate: Plan → Workers → Reviewer → Deliver |
-
-L0-L2 are fast paths. L3-L4 trigger the full protocol.
-
-### Three Roles
-
-| Role | Job |
-|------|-----|
-| **Brain** | Categorizes the task, defines scope/frozen scope, creates the plan |
-| **Worker(s)** | Execute within locked scope, produce evidence (diff, test output) |
-| **Reviewer** | Audits scope, policy, and technical correctness; runs sabotage checks |
-
-Workers run concurrently when possible. Reviewer isolation:
-- L3: same-session perspective switch
-- L4: **must** use a separate session (hard isolation)
-
-### Task Record Structure
-
-Each L3/L4 task creates a directory under `.agent-runs/`:
-
-```
-YYYY-MM-DD-NNN-task-slug/
-├── 00-request.md              # Original request
-├── 01-task-classification.md  # Risk level + scope
-├── 02-plan.md                 # Execution plan (shown to human)
-├── 03-evidence.md             # Evidence from execution
-├── 04-worker-report.md        # Worker self-check
-├── 05-review.md               # Reviewer verdict
-├── 06-final.md                # Delivery summary
-└── 07-brain-recheck.md        # (only when Reviewer FAILs)
-```
-
-## Sabotage-Verified Testing
-
-The core differentiator. Three rules ensure tests are real, not tautologies:
-
-### 1. Pure Call Rule (H4)
-
-Call pure functions directly, N+1 times, with sequence assertions:
-
-```python
-# ✅ Direct call, sequential assertion
-results = [is_rate_limited(ip) for ip in range(12)]
-assert results == [False]*10 + [True, True]
-# Traceback pinpoints element 10 on failure
-```
-
-### 2. No Bypass Rule
-
-Never inject fake routes or mock the module under test.
-
-```python
-# ❌ Bypasses real routing — test can pass with broken code
-flask_app.view_functions['rate_limit'] = lambda: "fake"
-
-# ✅ No bypass — tests real code through real paths
-```
-
-### 3. Sabotage Check (Reviewer)
-
-Reviewer intentionally breaks the implementation, then runs tests:
-
-```
-Step 1: cp app.py app.py.bak              # backup
-Step 2: make is_rate_limited return False  # sabotage
-Step 3: run tests → must FAIL              # if PASS, test is tautological
-Step 4: cp app.py.bak app.py              # restore
-Step 5: regression tests → all PASS
-```
-
-A test is real only if it fails when the code is wrong.
+---
 
 ## Quick Start
 
-1. **Judge the level** — L0-L2: go ahead. L3-L4: follow the protocol.
-2. **Brain** — write `01-task-classification.md` + `02-plan.md`, show human
-3. **Worker** — execute, write `03-evidence.md` + `04-worker-report.md`
-4. **Reviewer** — run sabotage checks, write `05-review.md`
-5. **Deliver** — summarize in `06-final.md`
+### 1. Copy the tools into your project
 
-See `templates/` for copy-paste ready templates. See `scripts/self-check.sh` for a one-shot verification script.
+```bash
+cp -r templates .agent-runs/templates
+cp scripts/self-check.sh .agent-runs/self-check.sh
+```
+
+### 2. Create a run folder for your task
+
+```bash
+bash scripts/new-run.sh add-rate-limit
+```
+
+Or manually:
+
+```bash
+RUN=.agent-runs/$(date +%F)-001-add-rate-limit
+mkdir -p "$RUN" && cp .agent-runs/templates/*.md "$RUN"/
+```
+
+### 3. Ask your AI agent
+
+Copy this prompt:
+
+```text
+Use Agent Team Protocol for this task.
+
+Create a new run folder under .agent-runs/ with the templates.
+
+First fill:
+- 00-request.md
+- 01-level.md
+- 02-plan.md
+
+Do not edit source code until I approve the plan.
+
+After implementation, fill the remaining files and run sabotage verification on critical logic.
+```
+
+### 4. Review
+
+Before final sign-off:
+
+```bash
+bash .agent-runs/self-check.sh
+```
+
+---
+
+## When to Use
+
+| When | Probably Not Needed |
+|------|-------------------|
+| New feature, refactor, multi-file change | Typos, comments, formatting |
+| Auth, payments, permissions, rate limits | Renaming a variable |
+| Database migration | One-line config change |
+| Logic where correctness matters | Read-only lookup |
+| Writing or modifying tests | — |
+
+---
+
+## Templates
+
+| File | Purpose |
+|------|---------|
+| `00-request.md` | Capture the original request and constraints |
+| `01-level.md` | Classify risk level (L0-L4) |
+| `02-plan.md` | Brain writes the execution plan |
+| `03-implementation.md` | Worker records what changed and why |
+| `04-review.md` | Reviewer checks scope, policy, and correctness |
+| `05-sabotage.md` | Sabotage-verified testing log |
+| `06-handoff.md` | Final delivery with tests run and risks noted |
+
+---
+
+## Sabotage-Verified Testing
+
+> A test is not trusted until it fails when the implementation is intentionally broken.
+
+Three rules:
+
+1. **Pure Call Rule** — test business logic by calling it directly (not through HTTP wrappers). Call N+1 times and assert the sequence.
+2. **No Bypass Rule** — never inject fake routes or mock the module under test.
+3. **Sabotage Check** — Reviewer intentionally breaks the implementation, runs tests (must FAIL), restores, runs tests again (must PASS).
+
+---
+
+## How the run folder grows
+
+```
+.agent-runs/
+  templates/                  # Your copy of the templates
+  self-check.sh               # Reviewer pre-check script
+  2026-06-19-001-add-rate-limit/
+    00-request.md
+    01-level.md
+    02-plan.md
+    03-implementation.md
+    04-review.md
+    05-sabotage.md
+    06-handoff.md
+  2026-06-18-002-fix-auth/
+    ...
+```
+
+Each completed folder is an audit trail: what was planned, what was changed, how it was verified.
+
+---
+
+## Options
+
+- `adapters/` — Tool-specific configs (see adapters/claude/CLAUDE.md for Claude Code)
+- `examples/` — Filled examples coming when someone contributes one
+
+---
 
 ## License
 
