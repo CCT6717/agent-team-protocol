@@ -77,9 +77,9 @@ bash .agent-runs/self-check.sh
 |------|---------|
 | `00-request.md` | Capture the original request and constraints |
 | `01-level.md` | Classify risk level (L0-L4) |
-| `02-plan.md` | Brain writes the execution plan |
+| `02-plan.md` | Brain writes the execution plan (includes parallel execution section) |
 | `03-implementation.md` | Worker records what changed and why |
-| `04-review.md` | Reviewer checks scope, policy, and correctness |
+| `04-review.md` | Reviewer checks scope, policy, anti-tautology evidence, correctness |
 | `05-sabotage.md` | Sabotage-verified testing log |
 | `06-handoff.md` | Final delivery with tests run and risks noted |
 
@@ -94,6 +94,24 @@ Three rules:
 1. **Pure Call Rule** — test business logic by calling it directly (not through HTTP wrappers). Call N+1 times and assert the sequence.
 2. **No Bypass Rule** — never inject fake routes or mock the module under test.
 3. **Sabotage Check** — Reviewer intentionally breaks the implementation, runs tests (must FAIL), restores, runs tests again (must PASS).
+
+---
+
+## Parallel Execution (v0.2.7)
+
+> "Run in parallel" only parallelizes Worker sub-agents. It never waives review gates.
+
+In concurrent mode, a **Merge Owner** role is added to the workflow:
+
+```
+Brain → Workers (parallel) → Merge Owner → Reviewer → Sabotage → Handoff
+```
+
+Merge Owner collects sub-agent outputs, resolves conflicts, checks cross-dependencies, and produces a merged diff for Reviewer.
+
+**Short command**: say "ATP parallel mode" to trigger the full concurrent workflow.
+
+See the full rulebook at [`agent-team-rules.md`](./agent-team-rules.md) §9 for details.
 
 ---
 
@@ -119,8 +137,9 @@ Each completed folder is an audit trail: what was planned, what was changed, how
 
 ---
 
-## Options
+## References
 
+- `agent-team-rules.md` — Full protocol rulebook (§1-9) with all cases and templates
 - `adapters/` — Tool-specific configs (see adapters/claude/CLAUDE.md for Claude Code)
 - `examples/` — Filled examples coming when someone contributes one
 
