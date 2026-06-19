@@ -73,9 +73,9 @@ bash .agent-runs/self-check.sh
 |:----|:----|
 | `00-request.md` | 记录原始需求 |
 | `01-level.md` | 判定风险等级 (L0-L4) |
-| `02-plan.md` | Brain 写执行计划 |
+| `02-plan.md` | Brain 写执行计划（含并发计划段） |
 | `03-implementation.md` | Worker 记录实现内容、变更文件和修改原因 |
-| `04-review.md` | Reviewer 检查范围、计划一致性、正确性和风险 |
+| `04-review.md` | Reviewer 检查范围、计划一致性、正确性、反恒真证据 |
 | `05-sabotage.md` | 记录破坏验证测试：故意改坏实现，确认测试会失败 |
 | `06-handoff.md` | 最终交付说明：变更摘要、测试结果和遗留风险 |
 
@@ -90,6 +90,16 @@ bash .agent-runs/self-check.sh
 1. **纯函数直调规则** — 业务逻辑直接调函数测，不走 HTTP 绕路。连续调 N+1 次，断言序列结果。
 2. **禁止绕路规则** — 不准注入假路由或 mock 被测模块。
 3. **破坏实验** — Reviewer 故意改坏核心代码，跑测试（必须 FAIL），还原，跑回归（必须 PASS）。
+
+---
+
+## 并发执行（v0.2.7）
+
+> 「并发跑」只授权 Worker 阶段并行，不豁免分级/审查/验收。
+
+并发场景新增 **Merge Owner** 角色：收集多 Worker 输出 → 处理冲突 → 检查交叉影响 → 形成合并 diff → 交 Reviewer 审查。
+
+**短口令**：说「ATP 并行模式」触发完整并发流程。
 
 ---
 
