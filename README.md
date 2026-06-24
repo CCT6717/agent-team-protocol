@@ -6,6 +6,8 @@ Use it when an AI agent is about to make a risky change: new feature, refactor, 
 
 **No install. No framework. No service. Just Markdown templates and a verification script.**
 
+> **Current version: v0.2.8** — Full protocol rules: [`agent-team-rules.md`](agent-team-rules.md)
+
 ---
 
 ## Quick Start
