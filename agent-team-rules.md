@@ -1865,14 +1865,14 @@ Brain > cct：任务完成。
 
 ### 19.1 协议版本状态
 
-- gent-team-protocol/agent-team-rules.md 当前定版为 **v0.2.8**
+- `gent-team-protocol/agent-team-rules.md 当前定版为 **v0.2.8**
 - 截止 **2026-06-28**，最近版本演进如下：
-  - 0.2.5：加入反恒真硬规则 + L4 头条实战规则
-  - 0.2.6：加入 L4 检核条件扩展、Reviewer 硬门槛、能力自检加塞、ponytail 冲突处理
-  - 0.2.7：加入并发执行规则，包括 Merge Owner、ATP 并发模式、 2-plan 并发计划段
-  - 0.2.8：L0+L1 合并 + Superpowers 集成，清理本地路径、更新至公开仓库版本
+  - `0.2.5：加入反恒真硬规则 + L4 头条实战规则
+  - `0.2.6：加入 L4 检核条件扩展、Reviewer 硬门槛、能力自检加塞、ponytail 冲突处理
+  - `0.2.7：加入并发执行规则，包括 Merge Owner、ATP 并发模式、 2-plan 并发计划段
+  - `0.2.8：L0+L1 合并 + Superpowers 集成，清理本地路径、更新至公开仓库版本
 
 ### 19.2 Claude Code 适配器
 
-- dapters/claude/CLAUDE.md 已添加，提供 CLAUDE.md 中协议相关段落的专用适配版本
+- `dapters/claude/CLAUDE.md 已添加，提供 CLAUDE.md 中协议相关段落的专用适配版本
 - 包含 L1-L4 阈值规则、角色定义、操作红线等精简配置
