@@ -1,4 +1,4 @@
-# Agent 协作理论 + 操作协议
+﻿# Agent 协作理论 + 操作协议
 
 > **Part I**：多智能体协作的形式化理论基础
 > **Part II**：经过实战验证的操作协议与模板
@@ -399,64 +399,17 @@ WRITE_LOCKS(T) = {(p₁ → a₁), (p₂ → a₂), ..., (pₙ → aₙ)}
 
 # Part II · 操作协议
 
----
+## 一、角色分工
 
-## 1. 核心原则
+| 角色 | 职责 | 权限 |
+|------|------|------|
+| **协调者** | 理解需求、判断任务等级、冻结范围、安排执行者和审核者 | 控权，不直接执行 |
+| **执行者** | 在授权范围内完成任务，输出变更报告和验证证据 | 可写，但必须按计划执行 |
+| **审核者** | 只读复核执行结果，检查范围、政策、技术、验证四个维度 | **只读**，不得修改文件 |
+| **规则门禁** | 判断是否触发用户确认条件 | 决策是否继续 |
+| **交付者** | 汇总最终结果，说明完成/未完成/风险 | 汇总，不扩大范围 |
 
-### 1.1 修改权隔离
-
-> 多智能体**不能同时拥有修改权**；同一阶段只能一个执行者可以写，审核者永远只读。
-
-### 1.2 范围冻结
-
-用户明确说"不要动某块""只改某部分"时，该范围冻结到**字段级**。执行者不得修改范围内任何子字段、配置项、文件内容或行为逻辑。如需触碰必须停止并单独确认。
-
-### 1.3 证据优先
-
-PASS 的唯一依据：**磁盘文件内容、Git Diff、测试输出**。不接受"执行者说已做完"作为验收标准。
-
-### 1.4 能力自检
-
-承担 L3+ 任务的会话，必须先通过一次只读能力自检（读目录、读文件、git status、git diff、运行测试）。无法通过则卸任。
-
----
-
-## 2. 角色分工
-
-### 2.1 v0.1 角色（中文）
-
-```
-用户
-│
-协调者
-├── 执行者：按授权范围完成任务
-├── 审核者：只读复核结果和证据
-├── 规则门禁：判断是否需要用户确认
-└── 交付者：输出最终交付说明
-```
-
-扩展角色：
-- **规划者**：拆解需求、制定执行计划
-- **验证者**：运行或核查测试、命令和证据链
-- **安全/正确性/风格审核者**：按维度拆分审查
-
-### 2.2 v0.2 角色升级（Brain/Worker/Reviewer）
-
-| v0.1 | v0.2 | 职责 | 权限 |
-|------|------|------|------|
-| 协调者 | **Brain** | 理解需求、判断等级、拆解原子任务、分发 Worker Task Card、协调 Reviewer | 控权，不直接执行 |
-| 执行者 | **Worker** | 收到独立 Task Card，持 WRITE_LOCKS 租约，只做卡片描述的事，输出证据包 | 可写，受 WRITE_LOCKS 约束 |
-| 审核者 | **Reviewer** | 必须在新会话/新 context window 启动，否则输出 `NEEDS_INDEPENDENT_REVIEW` | **只读**，硬隔离 |
-| 规则门禁 | 保留 | 判断是否触发用户确认条件 | 决策是否继续 |
-| 交付者 | 保留 | 汇总最终结果 | 汇总，不扩大范围 |
-
-核心约束：
-- **SWMR（Single Writer, Multiple Readers）**：同一文件系统上一次只能一个 Worker 有写权限
-- **Brain 中转**：Worker 之间如需共享信息，通过 Brain 中转，不直接通信
-
----
-
-## 3. 任务风险等级
+## 二、任务风险等级
 
 | 等级 | 类型 | 需用户确认 | 需审核者 | Superpowers |
 |------|------|-----------|---------|-------------|
@@ -465,339 +418,480 @@ PASS 的唯一依据：**磁盘文件内容、Git Diff、测试输出**。不接
 | L3 | 多文件修改、配置变更、跨模块 | 必须 | 必须 | **强制触发** |
 | L4 | 删除、迁移、部署、数据库、系统配置、破坏现存配置/数据兼容性 | 必须 + 单独确认风险 | 必须 | **强制触发** |
 
----
+## 三、核心原则
 
-## 4. 标准流程
+### 3.1 证据优先
+- PASS 的唯一依据：磁盘文件内容、Git Diff、测试输出
+- 不接受"执行者说已做完"作为验收标准
 
-### 4.1 修改类任务
+### 3.2 能力自检
+- 承担 L3+ 任务前，必须先通过一次能力自检：
+  - 读取指定目录
+  - 读取指定文件
+  - 执行 `git status --short`
+  - 执行 `git diff --name-only`
+- 无法通过自检的会话，必须卸任并交回用户
 
-**L1-L2（简化流程）**：
+### 3.3 范围冻结
+- 用户明确说"不要动某块""这块没问题""只恢复某部分"时，该范围冻结到字段级
+- 触碰冻结范围前必须单独确认，不得以"功能上合理"为由默认改动
+
+### 3.4 只读审查
+- 审核者永远只读，不得修改文件
+- 发现真实问题但需用户选择方向时，输出 `NEED_USER_DECISION`，不得替用户拍板
+
+## 四、标准流程
+
 ```
 用户请求
-→ Brain 判断等级 (L1-L2)
-→ Worker 给出计划 → 用户确认
-→ Worker 执行 → 输出证据包
-→ Reviewer 只读复核（L2 建议）→ PASS / FAIL / NEED_USER_DECISION
-→ 若 FAIL：Worker 只修 Required Fixes（不扩大范围）
-→ 若 NEED_USER_DECISION：停下来问用户
-→ 若 PASS：交付者交付
+→ 协调者判断任务等级 (L1-L4)
+→ 若 L2+：执行者给出计划 → 用户确认
+→ 执行者执行 → 输出证据包
+→ 审核者只读复核 → PASS / FAIL / NEED_USER_DECISION
+→ 若 FAIL：执行者只修 Required Fixes
+→ 交付者汇总交付
 ```
 
-**L3-L4（Superpowers 完整流程）**：
+## 五、输出模板
+
+### 执行者报告
 ```
-用户请求
-→ Brain 判断等级 (L3-L4)
-→ 触发 /brainstorming：
-   → 探索上下文 → 逐个问清需求 → 提出 2-3 方案
-   → 出设计文档 → cct 审核设计
-→ 触发 /writing-plans：
-   → 基于设计文档出实施计划
-→ 计划写入 02-plan → cct 确认
-→ Worker 执行 → 输出证据包
-→ Reviewer 只读复核（L3 同会话 / L4 必须新会话）
-→ 若 FAIL：Worker 只修 Required Fixes
-→ 若 PASS：交付者交付
+TASK_SUMMARY: 本次任务目标
+PLAN: 准备怎么做
+CHANGES_MADE: 实际做了什么
+VERIFICATION: 执行了哪些验证，结果是什么
+RISKS_OR_UNDONE: 剩余风险和未完成事项
 ```
 
-### 4.2 查询类任务
-
+### 审核者复核
 ```
-用户提问 → Brain 判 READ_ONLY → 只读查询 → 必要时审核 → 直接回答
-```
-
-### 4.3 方案设计类任务
-
-```
-用户提想法 → Brain 澄清约束 → 多角度分析 → 汇总 2-3 方案 → 用户选方向 → 进入实现
+REVIEW_STATUS: PASS | FAIL | NEED_USER_DECISION
+Scope Check: 是否越界、是否触碰冻结范围
+Policy Check: 是否遵守先问再干
+Technical Check: 是否解决原始问题、有无 bug
+Verification Check: 验证是否真实、必要、充分
+Required Fixes: 必须修复的问题
 ```
 
-### 4.4 高风险任务（L4）
+## 六、当前项目状态
 
-```
-用户提高风险操作 → Brain 标记 L4 → /brainstorming 完整流
-→ /writing-plans 出实施计划 → 规则门禁列风险 → 用户确认
-→ 分阶段执行 → 逐阶段审核 → 交付
-```
+- 项目记忆：`C:\Users\c\.claude\cctproject\Agent-Team-记忆.md`
+- 任务记录：`C:\Users\c\.claude\cctproject\.agent-runs/`
+- 协议文档：`C:\Users\c\.claude\cctproject\Agent协作审查协议-v0.1.md`
+- 已验证案例：CASE-001（字段修复）、CASE-002（记录复用）、CASE-003（能力自检规则固化）
 
 ---
 
-## 5. 审查结论标准
+## 七、v0.2 协议升级（2026-06-12）
 
-### PASS
+> v0.2 基于 5 个真实任务（实战案例验证）的合规性评估，解决"单上下文多角色"这一根本问题。引入 Brain/Worker/Reviewer 硬角色分离，不废除 v0.1 规则，在 v0.1 基础上叠加。
 
-- 已完成用户要求的核心目标
-- 无违规、无未授权操作
-- 验证结果明确
-- 未完成项和风险已说明
+### 7.1 三角色定义
 
-### FAIL
+| v0.1 角色 | v0.2 角色 | 职责 | 权限 |
+|-----------|-----------|------|------|
+| 协调者 | **Brain** | 理解需求、判断等级、拆解为原子任务、分发 Worker Task Card、选 Worker、协调 Reviewer、审核最终交付 | 控权，不直接执行 |
+| 执行者 | **Worker** | 收到独立 Task Card，持 WRITE_LOCKS 租约，只做卡片描述的事，输出证据包 | 可写，但受 WRITE_LOCKS 约束 |
+| 审核者 | **Reviewer** | 必须在新会话/新 context window 启动，否则输出 `NEEDS_INDEPENDENT_REVIEW` | **只读**，硬隔离 |
+| 规则门禁 | 保留 | 判断是否触发用户确认条件 | 决策是否继续 |
+| 交付者 | 保留 | 汇总最终结果，说明完成/未完成/风险 | 汇总，不扩大范围 |
 
-- 未经确认就修改了不该修改的内容
-- 安装/下载/删除/改配置未授权
-- 结果明显不符合要求
-- 存在明显技术错误
-- 验证证据不真实
-- 做了大量无关改动
-- 触碰冻结范围且未经确认
+关键约束：
+- **SWMR（Single Writer, Multiple Readers）**：同一文件系统上一次只能一个 Worker 有写权限
+- **Brain 中转**：Worker 之间如需共享信息，通过 Brain 中转，不直接通信
 
-### NEED_USER_DECISION
+### 7.2 WRITE_LOCKS 规则
 
-- 需用户在多个方案中选择
-- 需扩大任务范围或执行高风险操作
-- 发现状态与用户描述不一致
-- 完成任务可能触碰冻结范围
-
----
-
-## 6. 默认任务路由
-
-| 用户意图 | 默认流程 |
-|----------|---------|
-| "看看/查一下/有没有/在哪" | 只读查询 |
-| "review/检查/评估" | 审核者只读审查 |
-| "帮我改/实现/加功能/修bug" | 先计划 → 用户确认 → 执行 |
-| "设计一下/怎么做/架构方案" | 多智能体讨论或方案设计 |
-| "安装/下载/删除/改配置/改环境" | 必须用户确认 |
-| "大重构/迁移/改架构" | 方案设计 + 确认 + 分阶段 |
-
----
-
-## 7. v0.2 协议升级
-
-### 7.1 WRITE_LOCKS 规则
-
-02-plan 和 Worker Task Card 必须包含 WRITE_LOCKS 段。Worker A 锁定的文件，Worker B 不能写。粒度最小为文件级（glob 格式）。Brain 持有锁管理器角色。
+所有 02-plan（及 Worker Task Card）必须包含 `WRITE_LOCKS` 段：
 
 ```
 WRITE_LOCKS:
-- src/module_a/* → Worker A
-- src/module_b/* → Worker B
+- filepath/glob → Worker {agent_name}
+- filepath/glob → Worker {agent_name}
 ```
 
-### 7.2 Worker Task Card 模板
+规则：
+1. Worker A 锁定的文件，Worker B 不能写
+2. 锁定粒度最小为文件级，建议字段级/glob 级
+3. Brain 持有"锁管理器"角色，可以解锁和转移
+4. Reviewer 锁定为空（只读）
 
-每个 Worker 拿独立任务卡，代替自然语言分配：
+### 7.3 Worker Task Card 模板
+
+每个 Worker 拿到的独立任务卡，代替 v0.1 自然语言分配：
 
 ```
 TASK_ID: v0.2-{YMD}-{NNN}-W{序号}
 ASSIGNED_BY: Brain
 MODE: DRY_RUN | EXECUTE
 SCOPE:
-  - 允许读取/修改的路径
+- 允许读取的路径
+- 允许修改的路径
 WRITE_LOCKS:
-  - path/glob → Worker {name}
+- path/glob → Worker {name}
 FROZEN_SCOPE:
-  - path/glob（用 glob，不用自然语言）
+- path/glob（用 glob，不用自然语言）
 ACCEPTANCE_CRITERIA:
-  - 什么算完成 / 什么算 PASS
+- 什么算完成
+- 什么算 PASS
 VERIFICATION_PLAN:
-  - 准备执行的测试/检查
+- 准备执行的测试/检查
 EXPECTED_OUTPUT:
-  - 代码/diff/截图/日志
+- 期望产出物（代码/diff/截图/日志）
 ```
 
-### 7.3 状态机扩展
+### 7.4 Reviewer 硬切换协议
 
-v0.1 状态：`DRAFT → PLANNED → APPROVED → IN_PROGRESS → WORKER_DONE → REVIEWING → PASSED → FINALIZED`
-
-v0.2 新增：
-
-| 状态 | 含义 | 上一状态 | 下一状态 |
-|------|------|----------|----------|
-| `DRY_RUN_ONLY` | 只观察模式，不点最终发布 | `APPROVED` | `WORKER_DONE` |
-| `READY_FOR_FINAL_CONFIRM` | 所有前置条件就绪，等用户最后确认 | `REVIEWING` | `FINALIZED` |
-| `NEEDS_DECISION` | 多个分支方向，需用户选择 | `REVIEWING` | `APPROVED` / `ABORTED` |
-| `ABORTED` | 任务终止归档 | 任何状态 | 终态 |
-
-审核状态新增 `NEEDS_INDEPENDENT_REVIEW`：审核者未在独立会话运行，不得代审。
-
-### 7.4 v0.2 里程碑
-
-| 里程碑 | 状态 | 日期 |
-|--------|------|------|
-| M1 — 协议升级定版 | DONE | 2026-06-12 |
-| M2 — 小型并发演练 | PASS / FINALIZED | 2026-06-12 |
-| L3-CODE-DEMO — 代码并发演练（反恒真三条） | PASS / FINALIZED | 2026-06-13 |
-| M3 — 头条 L4 实战 | 进行中 | 自 2026-06-13 起持续推进，当前仍处于 PATCH 系列补丁阶段 |
-
-### 7.5 v0.2 验证能力清单
-
-- ✅ Brain Plan：TASK_SUMMARY / WORKER_ASSIGNMENT / WRITE_LOCKS / VERIFICATION_PLAN 结构
-- ✅ Worker Task Card：TASK_ID / SCOPE / WRITE_LOCKS / FROZEN_SCOPE / ACCEPTANCE_CRITERIA
-- ✅ WRITE_LOCKS / SWMR：10 文件锁定，3 角色无重叠
-- ✅ 双 Worker 并发：A/B 报告时间戳差 20s，零文件冲突
-- ✅ Reviewer 硬切换：独立会话审核，5 维度 PASS
-- ✅ 证据闭环：00-request → 07-final 全链路 7 文件，三方独立产出
-- ✅ 反恒真三条铁规
-- ✅ L4 头条实战硬规则三条
-
-### 7.6 反恒真硬规则（2026-06-13 沉淀）
-
-**背景**：L3 演练中 Worker v1 通过 `view_functions` 注入假视图绕过真实实现，6/6 unittest 仍 PASS。Reviewer 硬切换逮住。
-
-**三条铁规（L2+ 任务的 Worker 测试交付 AC 中必须包含，Reviewer 检查表必须包含）**：
-
-**① H4 纯函数级断言作为契约对象铁证**
-- 至少连续 N+1 次调用（N = 被测边界值）
-- 断言 `assertEqual(pure_results, [expected_pass] × N + [expected_block, expected_block])`
-- traceback 必须精确到元素位置（如 `First differing element 10`）
-
-**② 禁止任何 view_functions 注入**
-- ❌ `flask_app.view_functions[...] = ...`
-- ❌ `@app.route` 重新注册同名路由
-- ❌ `_patch_view` / `_rate_limited_view` 等 wrapper
-- ❌ `app.before_request` / `after_request` 钩子注入
-- 唯一允许入口：`app.test_client()`
-- Reviewer 必跑反注入 grep：`grep -nE "view_functions|_patch_view|_rate_limited_view|wrapped_view" test_*.py`，期望 GREP_EXIT=1
-
-**③ Reviewer 必须做破坏实验（改坏实现 → 测试须 FAIL → 还原）**
-1. `python -m py_compile {app.py, test_app.py}` → EXIT=0
-2. 反注入 grep 三模式 → GREP_EXIT=1
-3. `python -m unittest test_app.py -v` → 全部 PASS
-4. Reviewer 独立复算脚本（直调纯函数 + 真路由 + /health + JSON 字段 + 清理恢复）→ 全部 PASS
-5. **破坏实验**：备份 app.py → 改核心函数为恒定错误返回值 → 复跑测试至少 1 个 FAIL → 还原 → 回归 100% PASS
-6. 删除破坏临时文件，FROZEN_SCOPE 无污染
-
-### 7.7 L4 头条实战硬规则（2026-06-13 沉淀）
-
-**① dry_run `[FAIL]` 字样是脚本设计行为**
-- 头条发布脚本 `--diagnose` 必然以 `[FAIL]` 结尾（源码 L1168 `return False`）
-- 判断 PASS/FAIL 必须溯源 L1xxx 源码确认设计意图
-
-**② 草稿箱核对禁用 playwright MCP**
-- playwright MCP 浏览器跟脚本 profile 不共享 cookie/localStorage
-- 改为：cct 手动浏览器核对 / 脚本 profile 启动 / API 核对 / 跳过
-
-**③ Worker Task Card 路径必须用绝对路径**
-- ❌ `.agent-runs/...`（被解析到 cwd 下，可能触发 FROZEN_SCOPE 违规）
-- ✅ `<project-root>/.agent-runs/...`
-
----
-
-## 8. Prompt 模板
-
-### 8.1 执行者报告
-
-```
-TASK_SUMMARY: 本次任务目标
-PLAN: 准备怎么做
-CHANGES_MADE: 实际做了什么
-VERIFICATION: 执行了哪些验证，结果是什么
-  STATIC_VERIFICATION: 静态检查
-  TEST_VERIFICATION: 测试验证
-  RUNTIME_VERIFICATION: 运行验证
-RISKS_OR_UNDONE: 剩余风险和未完成事项
-```
-
-### 8.2 审核者复核
+新增审核状态：
 
 ```
 REVIEW_STATUS: PASS | FAIL | NEED_USER_DECISION | NEEDS_INDEPENDENT_REVIEW
-
-Scope Check: 是否在授权范围内操作，是否触碰冻结范围
-Policy Check: 是否遵守先问再干，有无未授权操作
-Technical Check: 是否解决原始问题，有无 bug/行为漂移
-Verification Check: 验证是否真实、必要、充分，是否区分验证类型
-Required Fixes: 必须修复的问题
-Notes: 其他建议
 ```
 
-### 8.3 交付者交付
+触发 `NEEDS_INDEPENDENT_REVIEW` 的条件：
+- Reviewer 在当前上下文（未切新会话）中审核
+- Reviewer 工具链不可用（无法读文件、无法执行 git diff）
+
+行为：
+- 输出 `NEEDS_INDEPENDENT_REVIEW`，附完整证据包路径
+- 不得代审判 PASS / FAIL
+- 下个独立会话拿到证据包后重新审核
+
+### 7.5 状态机扩展
+
+v0.1 状态：
 
 ```
-TASK_RESULT: PASS | FAIL | NEED_USER_DECISION | CANCELLED
-WHAT_WAS_DONE: 实际完成了什么
-FILES_CHANGED: 修改了哪些文件
-FILES_NOT_TOUCHED: 明确未触碰的冻结范围
-VERIFICATION_SUMMARY: 验证了什么、未验证什么及原因
-REVIEW_RESULT: 审核者结论
-USER_DECISIONS: 用户做过的确认或选择
-RISKS_OR_UNDONE: 剩余风险和未完成事项
+DRAFT → PLANNED → APPROVED → IN_PROGRESS → WORKER_DONE → REVIEWING → PASSED → FINALIZED
 ```
 
-### 8.4 代码库解释
+v0.2 新增 4 个状态：
+
+| 状态 | 含义 | 上一状态 | 下一状态 |
+|------|------|----------|----------|
+| `DRY_RUN_ONLY` | 只观察模式，不点最终发布/不确认执行 | `APPROVED` | `WORKER_DONE` |
+| `READY_FOR_FINAL_CONFIRM` | 已准备好所有前置条件，等用户最后确认 | `REVIEWING` | `FINALIZED` |
+| `NEEDS_DECISION` | 有多个分支方向，需用户选择 | `REVIEWING` | `APPROVED` / `ABORTED` |
+| `ABORTED` | 任务终止归档 | 任何状态 | 终态 |
+
+典型流转（头条 L4 场景）：
 
 ```
-TASK_SUMMARY: 解释目标项目结构、运行方式和核心流程
-READ_ONLY_SCOPE: 允许读取的范围
-FACTS_VERIFIED: 从文件/配置/命令输出确认的事实（可追溯）
-ASSUMPTIONS_OR_INFERENCES: 推断内容（说明依据，不写成事实）
-CODEBASE_OVERVIEW: 项目是什么、主要用途
-TECH_STACK: 语言、框架、数据库、部署
-MAIN_DIRECTORIES: 主要目录职责
-RUNBOOK: 启动方式、端口、环境变量
-KEY_FLOWS: 请求入口、核心链路、错误处理
-CURRENT_RISKS_OR_DIRTY_STATE: 现状风险（仅提示，不处理）
+DRAFT → PLANNED → APPROVED → DRY_RUN_ONLY → WORKER_DONE → REVIEWING
+→ READY_FOR_FINAL_CONFIRM → (用户:"点击发布") → FINALIZED
 ```
+
+ABORTED 流转：
+
+```
+DRAFT → PLANNED → APPROVED → (用户:不干了) → ABORTED
+NEEDS_DECISION → (用户:方向不可行) → ABORTED
+```
+
+### 7.6 范围冻结粒度提升
+
+v0.1 自然语言 → v0.2 glob/字段名格式：
+
+```
+# v0.1（模糊，审核者难以验证）
+FROZEN_SCOPE: 不要动脚本文件和共用模块
+
+# v0.2（精确，审核者可直接 grep 验证）
+FROZEN_SCOPE:
+- scripts/*.py
+- utils/**/*
+- config.REDIS_HOST (字段名不可改)
+```
+
+Worker Task Card 和 02-plan 的 FROZEN_SCOPE 字段强制使用 glob 格式。
+
+### 7.7 阶段状态机字段
+
+v0.1 状态字段散落在文档各处（CLAUDE.md / stage-status.md / 任务报告），v0.2 统一在 stage-status.md 中跟踪。
+
+格式：
+
+```
+| 阶段 | 状态 | 说明 |
+|------|------|------|
+| Agent Team v0.X-XXX | PASS / FINALIZED | YYYY-MM-DD 完成。N 文件全链交付 |
+| Agent Team v0.X-XXX | PLANNING | 规划中，等 cct 确认 |
+| Agent Team v0.X-XXX | NOT_STARTED | 未启动 |
+```
+
+状态枚举：`DRAFT | PLANNING | AWAITING_WORKERS | AWAITING_REVIEW | REFIXING | PASSED | FINALIZED | ABORTED | NOT_STARTED`
+
+### 7.8 Reviewer 硬规则汇总（v0.2.4 起强制）
+
+> 旧版 Reviewer 硬规则在 §7.4（硬切换协议）；v0.2.4 起把硬切换 + 反恒真（§7.9）+ 其他 Reviewer 必查项合并为 Reviewer 检查表。
+
+| 硬规则 | 章节 | 必查项 |
+|--------|------|--------|
+| 硬切换 | §7.4 | 新会话审核，输出 `NEEDS_INDEPENDENT_REVIEW` 若未切 |
+| FROZEN_SCOPE glob 格式 | §7.6 | grep 验证锁定粒度 |
+| **反恒真铁证** | **§7.9** | **三项必查（见下）** |
+
+### 7.9 反恒真硬规则（2026-06-13 沉淀自 v0.2-L3 演练）
+
+> **触发背景**：v0.2-L3 free-ai-tool 速率限制演练中，Worker B v1 写出"恒真"测试套件——通过 `flask_app.view_functions[...] = _rate_limited_view` 注入假限速视图绕开 Worker A 的真实实现，6/6 unittest 仍 PASS。Reviewer 第一次硬切换逮住 FAIL（06-review.md），Worker B v2 重写 + 二次独立 Reviewer PASS（06b-review-v2.md）后，把"反 view injection + H4 纯函数铁证 + 破坏实验"**从 Worker 自觉提升为 AC 必过项**。
+
+任何 L2+ 任务的 **Worker 测试交付**，AC 中必须显式包含以下三条；**Reviewer 检查表**也必须包含这三条。**缺一即 FAIL，不给软 PASS**。
+
+#### 7.9.1 H4 纯函数级断言作为契约对象铁证
+
+测试必须包含对被测模块**纯函数**（如 `module.func(args)`）的**返回值序列断言**。
+
+要求：
+- 至少连续 N+1 次调用，N 为被测边界值（如限速上限 + 1）
+- 断言形如 `assertEqual(pure_results, [expected_pass] * N + [expected_block, expected_block])`
+- **纯函数 traceback 必须精确到元素位置**（如 `First differing element 10`），这是反恒真的最硬证据
+
+正例（free-ai-tool 演练 test_app.py:140-150）：
+
+```python
+pure_results = [self.app_mod.is_rate_limited("test-ip") for _ in range(12)]
+self.assertEqual(pure_results, [False] * 10 + [True, True])
+```
+
+反例（v1 恒真）：只测 HTTP 状态码 + JSON 字段，未对 `is_rate_limited` 纯函数做断言 → 测试可能测到的是注入的假视图。
+
+#### 7.9.2 禁止任何 view_functions 注入
+
+测试不得通过以下任何方式修改被测应用的路由表：
+
+- ❌ `flask_app.view_functions[...] = ...` 赋值
+- ❌ `@app.route` 重新注册同名路由
+- ❌ `_patch_view` / `_rate_limited_view` / `wrapped_view` / `_decorated_view` 等任何辅助 wrapper
+- ❌ `app.before_request` / `app.after_request` 钩子注入（除明确的 mock 目的）
+
+**唯一允许访问 Flask 应用的入口是 `app.test_client()`**（仅作为调用方，不得修改 view 字典）。
+
+Reviewer 必跑反注入 grep：
+
+```bash
+grep -nE "view_functions|_patch_view|_rate_limited_view|wrapped_view" test_*.py
+# 期望：GREP_EXIT=1（无匹配）
+```
+
+#### 7.9.3 Reviewer 必须做破坏实验（改坏实现 → 测试须 FAIL → 还原）
+
+Reviewer 审核测试交付时，**必跑以下 6 个铁证**（5 条命令 + 1 个破坏实验）：
+
+1. `python -m py_compile {app.py, test_app.py}` → EXIT=0
+2. 反注入 grep 三模式（见 §7.9.2）→ GREP_EXIT=1
+3. `python -m unittest test_app.py -v` → 全部 PASS
+4. Reviewer 独立复算脚本（直接调纯函数 + 真路由 + /health + JSON 字段 + 清理恢复）→ 全部 PASS
+5. **破坏实验**：备份 app.py → 改核心函数为恒定错误返回值（如 `return False`）→ 复跑测试**至少 1 个 FAIL**（期望 §7.9.1 H4 纯函数 traceback 精确指出元素位置）→ 还原 app.py + 回归测试 100% PASS
+6. 删除破坏实验临时备份文件，**FROZEN_SCOPE 无污染**
+
+**5 条命令 + 破坏实验全过 = PASS**；任何一步不过 = FAIL 并列 Required Fixes（文件:行号）。
+
+#### 7.9.4 影响范围
+
+- 后续所有 L2+ 任务的 **Worker Task Card 模板**（§7.3），AC 段必须显式包含 §7.9.1 + §7.9.2 两条
+- **Reviewer 任务卡模板**必须包含 §7.9.3 破坏实验段
+- 阶段状态表（agent-team-stage-status.md）增加一行：§7.9 反恒真硬规则：✅ 已纳入 v0.2.4 模板
+- 历史任务复盘：v0.2-M2（小型并发演练）已 PASS，未触发恒真问题，**不强制回溯**
+
+#### 7.9.5 已知风险
+
+- **L4 任务**（部署/迁移/头条发布）最容易写出"假 PASS"测试（UI 自动化、发布脚本 mock），§7.9 写入后下次 L4 必须严格执行
+- **M3 头条 PATCH6**（图片搜索对话框 + 分类字段）属于 L4，会优先验证 §7.9.1 + §7.9.3
+- 反恒真 grep 模式需要针对不同框架扩展正则
+
+
+## 八、v0.2.6 协议升级（2026-06-19 沉淀自 L4 配置迁移实战复盘）
+
+### 8.1 事故概要
+
+某项目中涉及后端/前端/配置结构迁移的多阶段改造，实际为 L4 级别：
+- 配置结构/格式变更：字段名变更导致旧配置文件无法被新代码识别
+- 涉及多文件修改（后端 Go + 前端 React）
+- 需要用户手动迁移配置文件
+
+但执行时误判为 L3，且未执行 Reviewer 审查——测试全绿被当作交付证据，单人单会话自写自测完成后才停下。
+
+### 8.2 L4 判断标准扩展
+
+原 L4 触发条件（删除/迁移/部署/数据库/系统配置）补充两条：
+
+**新增显式触发条件**：
+
+| 条件 | 说明 |
+|------|------|
+| **破坏现存配置/数据兼容性** | 新代码无法正常加载现有的配置文件（如配置文件字段变更），或加载后逻辑不同但无告警 |
+| **配置结构/格式变更** | JSON Schema 变更、数据库表结构变更、接口响应不兼容变更 |
+
+**L4 检核问题清单**（需在 PLAN 阶段自问，至少一个「是」→ L4）：
+
+1. 新代码能否加载旧配置文件？如果不能，有没有 fallback/兼容路径？
+2. 旧代码能否读取新配置写出的数据？
+3. 改动是否需要用户手动迁移配置文件？
+4. 是否需要改数据库 schema / 数据文件格式？
+5. 是否改了现有 API 的请求/响应格式，导致旧客户端不兼容？
+
+### 8.3 Reviewer 硬门槛确认
+
+**测试全绿 ≠ 审查通过。**
+
+明确两条：
+
+1. **Reviewer 是独立阶段，不是可选项。** Worker Done 之后必须有一道只读审查。L3 同会话切换视角审查，L4 必须手工新会话。不能由 Worker 自验替代。
+2. **测试输出是 Worker 交付物，不是审查证据。** `go test -v` PASS 只说明 Worker 自测通过。Reviewer 需要跑自己的验证序列（包括反恒真破坏实验）。Reviewer 阶段结束后得出的测试输出才算审查证据。
+
+### 8.4 能力自检加塞规则
+
+原 §3.2：「承担 L3+ 任务前，必须先通过一次能力自检」。
+
+**补充执行时机**：「用户确认 PLAN」之后、「开始写代码」之前。不得跳过。
+
+```text
+1. git status --short           → 确认工作树状态
+2. git diff --name-only         → 确认未提交改动
+3. go build ./... / npm run build 等 → 确认当前代码可编译
+4. 确认会话可读文件、可执行命令、可访问目标路径
+```
+
+自检工具链不全的会话必须卸任。开工后发现工具链问题也立即停下，不可用「将就一下」继续写。
+
+### 8.5 Ponytail 模式与协议的同时激活规则
+
+ponytail 和 Agent Team 协议可能同时激活。当两者冲突时：
+
+| 条件 | 遵守谁 | 理由 |
+|------|--------|------|
+| L1-L2 | ponytail | 小活直接干，协议无额外门槛 |
+| L3+ | **协议优先** | ponytail §"When NOT to be lazy" 列出「anything explicitly requested」不适用——L3+ 的「先问再动」是 CLAUDE.md 全局偏好，高于 ponytail 的「最短路径」 |
+| L3+ 但提交前 | 协议 Worker→Reviewer 流程必须走完 | Reviewer 是硬门槛，ponytail 不能跨过 |
+| 安全/兼容性/数据完整性问题 | 协议优先 | 这些不在 ponytail 简化范围内 |
+
+**一句话**：级别判给 ponytail（快速判断 L1-L4），执行交给协议（L3+ 必须分角色审查）。
+
+
+## 九、v0.2.7 协议升级——并发执行（2026-06-19 沉淀自 L4 并发模式澄清复盘）
+
+### 9.1 问题背景
+
+cct 说「并跑吧」被误读为「协议豁免」——Agent 认为用户允许并发 = 允许跳过分级/审查/验收。实际用户意图是：**只改执行调度，不改验收门槛**。
+
+### 9.2 核心原则
+
+> **并发只改变执行方式，不改变验收标准。**
+
+并行化的范围边界：
+- ✅ 可以将 Worker 阶段拆分为多个子 Agent 并发执行
+- ❌ 不可以因并发跳过 Brain 的分级/计划
+- ❌ 不可以因并发跳过 Reviewer 审查
+- ❌ 不可以因并发跳过破坏验证（L3+）
+- ❌ 不可以因并发加速或省略最终交付说明
+
+### 9.3 并发模式下的角色扩展
+
+并发场景新增一个临时角色 **Merge Owner**，非并发场景不启用。
+
+| 角色 | 在并发模式中的职责 |
+|------|-------------------|
+| **Brain** | 拆分子任务，定义每个 Worker 的边界和 WRITE_LOCKS，选 Merge Owner |
+| **Worker(s)** | N 个子 Agent 并行执行，每人只做自己声明范围内的事，输出独立证据包 |
+| **Merge Owner** | 收集所有 Worker 结果 → 处理冲突 → 检查交叉影响 → 形成合并 diff → 交 Reviewer |
+| **Reviewer** | 审查合并后的整体结果，不只看单个 Worker 输出 |
+| **交付者** | 说明每个 Worker 做了什么、改了什么、跑了什么测试、剩余风险 |
+
+Merge Owner 通常由 Brain 兼任（脑已掌握全局上下文，不需额外传递），但如果并发任务规模大（≥5 Worker），Brain 应指定一个 Worker 升任 Merge Owner。
+
+### 9.4 并发流程
+
+```text
+Brain 判断等级 + 出计划
+  → cct 确认计划
+  → Brain 拆分子任务卡（每卡一个 Worker）
+  → Worker A / Worker B / Worker C … 并发执行
+  → Merge Owner 汇总 + 处理冲突
+  → Reviewer 审查合并结果
+  → 破坏验证（L3+）
+  → 交付
+```
+
+关键：**Reviewer 不看单 Worker 输出，看 Merge Owner 给出的合并后结果。** 否则 Worker A 自审 PASS、Worker B 自审 PASS，合并出 bug 无人发现。
+
+### 9.5 并发计划段模板
+
+02-plan 的「并发执行计划」段：
+
+```markdown
+## 并发执行计划
+
+是否请求并发：是
+
+| 子 Agent | 角色 | 范围 | 允许修改路径 | 禁止修改路径 | 预期产出 |
+|----------|------|------|-------------|-------------|---------|
+| Worker A | | | | | |
+| Worker B | | | | | |
+| Worker C | | | | | |
+
+Merge Owner: [Brain / Worker name]
+
+并发规则：
+- 每个 Worker 只能处理自己声明范围内的文件
+- 每个 Worker 必须报告改了什么文件 + 跑了哪些测试 + 测试结果
+- Worker 不得自审自己的产出
+- Reviewer 必须审查 Merge Owner 合并后的整体结果，不只看单 Worker 交付
+```
+
+### 9.6 短口令
+
+cct 可以说「ATP 并发模式」或「ATP parallel mode」，含义固定为：
+
+- ✅ Brain 可将 Worker 阶段拆分给多个子 Agent
+- ✅ Worker 可并行执行
+- ✅ 每个 Worker 必须有明确边界
+- ✅ Merge Owner 汇总结果
+- ✅ Reviewer 不可省略
+- ✅ 关键逻辑必做破坏验证
+- ❌ 并发永远不豁免协议门槛
+
+### 9.7 影响范围
+
+- §1 角色分工表：备注增加「并发场景增加 Merge Owner」
+- 02-plan 模板：增加「并发执行计划」可选段
+- 本文件追加 §9 v0.2.7
+- stage-status.md 追加 §9 状态行
 
 ---
 
-## 8a. 核心流程（总纲）
+## 十、v0.2.8 协议升级——L0+L1 合并 + Superpowers 集成（2026-06-24）
 
-> **本流程仅用于 L3/L4 任务。L1-L2 直接做，不需要走这套。**
+### 10.1 变更内容
 
-### 8a.1 七步流程（含 Superpowers）
+**L0+L1 合并**：
+- 旧 L0（纯聊天）+ 旧 L1（只读查询）→ 新 L1（不需确认，不需 Reviewer）
+- 旧 L2/L3/L4 不变
 
-```
-用户请求
-  ↓
-Brain 分类定级（L1-L4）
-  ↓
-[仅 L3/L4] 触发 Superpowers：
-  → /brainstorming：探索上下文 → 逐问需求 → 2-3 方案 → 设计文档
-  → cct 审核设计文档
-  → /writing-plans：设计文档 → 实施计划
-  ↓
-Brain 写 01-task-classification + 02-plan（L3/L4 以 Superpowers 输出为输入）
-  ↓
-cct 确认计划
-  ↓
-Worker 执行（能并发就并发）
-  ↓
-Reviewer 审核（L3 同会话 · L4 必须新会话）
-  ↓
-交付
-```
+**Superpowers L3/L4 固定触发**：
+- Brain 分类为 L3 或 L4 后，**强制调 `/brainstorming` → `/writing-plans`** 走 Superpowers 完整流
+- L1/L2 不触发
 
-### 8a.2 Reviewer 隔离规则
+### 10.2 L3/L4 完整链路
 
-| 等级 | 审核方式 | 操作 |
-|:----|:--------|:----|
-| L3 | 同会话切换 | 我声明「切换为 Reviewer 视角」，重新读证据文件后独立复核 |
-| L4 | **必须新会话** | 你手动开一个新对话，我进去只读审核，不碰代码 |
-
-> L3 同会话审核时，我会先重置角色状态、忽略之前的执行记忆，只靠证据文件做判定。
-> L4 新会话审核是硬隔离——前后两个会话互相看不到对方的内容，确保零偏见。
-
-### 8a.3 Superpowers 触发规则
-
-**触发条件**：Brain 分类为 L3 或 L4 时，**固定触发** Superpowers 完整流程，不可跳过。
-
-**流程**：
-
-| 步骤 | 调用 | 产出 | 说明 |
-|:-----|:-----|:-----|:-----|
-| 1 | `/brainstorming` | 设计文档 `docs/superpowers/specs/` | 探索上下文 → 逐个问清 → 提 2-3 方案 → 设计 → cct 审核 |
-| 2 | `/writing-plans` | 实施计划 | 基于设计文档拆实施步骤 |
-| 3 | Brain 写 02-plan | Worker Task Card | 以 Superpowers 产出为输入，写入标准模板 |
-
-**L3/L4 完整链路**：
 ```
 /brainstorming → cct 审核设计 → /writing-plans → 02-plan → cct 确认 → Worker → Reviewer → 交付
 ```
 
-**不触发场景**：
-- L1（纯查询/聊天）：直接回答
-- L2（小改动）：走简化流程，不出设计文档
+### 10.3 与现有流程的关系
 
-**与现有流程的关系**：
 - Superpowers 是 L3/L4 的**前置阶段**，在 Worker 执行之前
 - 设计文档是 02-plan 的输入来源，不是替代品
 - cct 审核设计文档 = 用户确认计划的一部分
 
----
+### 10.4 影响范围
 
-## 9. .agent-runs 任务记录规范
+- §二 任务风险等级表：L0 消失，新 L1 = 旧 L0+L1，增加 Superpowers 列
+- §8a 核心流程：五步 → 七步（含 Superpowers）
+- §17 快速上手：更新等级判断
+- CLAUDE.md L1-L4 阈值表：同步更新
+- 所有 L0 引用 → 替换为 L1
+
+## 10. .agent-runs 任务记录规范
 
 ### 9.1 目录结构
 
@@ -826,7 +920,7 @@ Reviewer 审核（L3 同会话 · L4 必须新会话）
 
 ---
 
-## 10. 完整任务模板（00-06 可复制版）
+## 11. 完整任务模板（00-06 可复制版）
 
 > **命名规则**：以下使用角色中立命名（`01-task-classification.md`）作为标准。实际使用时两种命名都有效：
 >
@@ -1089,7 +1183,7 @@ NEED_USER_DECISION → 提请用户裁定
 
 ---
 
-## 11. 角色操作指南
+## 12. 角色操作指南
 
 ### 11.1 Brain 操作流程
 
@@ -1197,7 +1291,7 @@ NEED_USER_DECISION → 提请用户裁定
 
 ---
 
-## 12. 常见违规与标准处置
+## 13. 常见违规与标准处置
 
 ### 12.1 违规类型速查
 
@@ -1252,7 +1346,7 @@ NEXT: 在新会话中重新审核，或由用户粘贴必要输出
 
 ---
 
-## 13. 案例库
+## 14. 案例库
 
 ### CASE-001：字段修复复审（L2）
 
@@ -1284,7 +1378,7 @@ NEXT: 在新会话中重新审核，或由用户粘贴必要输出
 
 ---
 
-## 14. 项目状态
+## 15. 项目状态
 
 ### 14.1 整体进度
 
@@ -1321,7 +1415,7 @@ NEXT: 在新会话中重新审核，或由用户粘贴必要输出
 
 ---
 
-## 15. 后续演进方向
+## 16. 后续演进方向
 
 ### 15.1 外部化路线
 
@@ -1350,7 +1444,7 @@ NEXT: 在新会话中重新审核，或由用户粘贴必要输出
 
 ---
 
-## 16. 工具与自动化
+## 17. 工具与自动化
 
 ### 16.1 反恒真 grep 命令集
 
@@ -1469,7 +1563,7 @@ echo "" && echo "  $p / $t 通过"
 
 ---
 
-## 17. 快速上手
+## 18. 快速上手
 
 ### 17.1 给 Brain：10 秒判断任务等级
 
@@ -1523,7 +1617,7 @@ echo "" && echo "  $p / $t 通过"
 
 ---
 
-## 18. 真实对话示例
+## 19. 真实对话示例
 
 > 本章展示 Brain/Worker/Reviewer 三角色协作在完整 L2 任务中的实际操作流程。
 > 任务：把 README.md 里的端口号从 3000 改成 8080。
@@ -1767,86 +1861,18 @@ Brain > cct：任务完成。
 
 ---
 
-## 19. 最新进度同步（2026-06-19 ~ 2026-06-20）
+## 19. 最新进度同步（2026-06-28）
 
 ### 19.1 协议版本状态
 
-- `agent-team-protocol/agent-team-rules.md` 当前定版为 **v0.2.8**
-- 截止 **2026-06-24**，最近版本演进如下：
-  - `v0.2.5`：加入反恒真硬规则 + L4 头条实战规则
-  - `v0.2.6`：加入 L4 检核条件扩展、Reviewer 硬门槛、能力自检加塞、ponytail 冲突处理
-  - `v0.2.7`：加入并发执行规则，包括 `Merge Owner`、`ATP 并发模式`、`02-plan` 并发计划段
-  - `v0.2.8`：清理本地路径、更新至公开仓库版本
+- gent-team-protocol/agent-team-rules.md 当前定版为 **v0.2.8**
+- 截止 **2026-06-28**，最近版本演进如下：
+  - 0.2.5：加入反恒真硬规则 + L4 头条实战规则
+  - 0.2.6：加入 L4 检核条件扩展、Reviewer 硬门槛、能力自检加塞、ponytail 冲突处理
+  - 0.2.7：加入并发执行规则，包括 Merge Owner、ATP 并发模式、 2-plan 并发计划段
+  - 0.2.8：L0+L1 合并 + Superpowers 集成，清理本地路径、更新至公开仓库版本
 
-### 19.2 项目阶段状态
+### 19.2 Claude Code 适配器
 
-根据本文件前文记录，当前阶段状态应更新为：
-
-| 阶段 | 状态 | 说明 |
-|------|------|------|
-| 第一阶段（最小闭环） | PASS | 已完成并验证 |
-| 第二阶段（记录层） | OPERATIONAL | `.agent-runs` 与任务记录已形成稳定形态 |
-| v0.2-M1 协议升级 | DONE | 已完成 |
-| v0.2-M2 小型并发演练 | PASS / FINALIZED | 已闭环 |
-| v0.2-L3 代码并发演练 | PASS / FINALIZED | 已闭环 |
-| v0.2-M3 / 头条 L4 实战 | 进行中 | 仍处于 PATCH 系列补丁推进阶段 |
-
-### 19.3 当前未完成项
-
-截至 **2026-06-20**，协议体系本身不是“未设计完”，而是“已设计并部分实战，尚未完全平台化”。当前主要未完成项：
-
-1. Reviewer 外部化仍未完成，尚未形成独立可调用检查器
-2. CLI 编排器仍未落地，尚未形成多模型/多进程/多 workspace 的正式调度层
-3. 头条 L4 实战链路仍有补丁任务在推进，协议仍在借真实任务继续沉淀规则
-
-### 19.4 头条 L4 实战的最新真实状态
-
-头条 L4 实战补丁链为协议规则的主要实战验证来源。当前状态：
-- `toutiao_article_publish.py` 当前为 **已解冻**（允许继续处理封面上传及正文改进）
-- 以下文件仍属于冻结范围：`toutiao_article_publish_utils.py`、`app.py`、`toutiao_publish.py`、`test_*.py`、`diagnose_publish.py`、`~/.toutiao_profile/**`、`.agent-runs/{历史任务}/**`
-
-**当前真实活跃主线仍然是头条 L4 实战补丁链，而不是新的协议主线开发。**
-
-### 19.5 本轮新增经验
-
-2026-06-20 补充一条实践规则：
-
-- 遇到中文文件读取乱码时，不能直接把当前输出当成真实内容
-- 必须至少切换一种读取方式复核后再判断
-- 推荐顺序：
-  1. `chcp 65001` 后用 `Get-Content -Encoding utf8`
-  2. `python -X utf8 -c "open(..., encoding='utf-8').read()"`
-  3. 仍异常时再判断是否为 `GBK`、`UTF-8 with BOM` 或文件损坏
-
----
-
-## 20. 与全局 AGENTS.md 的区别
-
-### 20.1 全局 AGENTS.md
-
-这是 **全局运行规则文件**，作用范围是整个工作空间。它的职责是：
-
-- 约束 Agent 的通用行为
-- 定义审批、只读模式、Scope Freeze、风险等级等全局规则
-- 补充在当前机器和当前工作区下长期有效的执行习惯
-
-它偏向”**操作系统级 / 工作区级 / Agent 行为级规则**”。
-
-### 20.2 agent-team-rules.md（本文件）
-
-这是 **协议主文档**，作用范围是 Agent Team 协议项目本身。它的职责是：
-
-- 记录 Agent Team 的理论基础
-- 沉淀协议设计、案例、状态演进和任务方法
-- 作为该项目自己的”设计文档 + 演进日志 + 案例库主文档”
-
-它偏向”**项目协议本体**”，不是全局执行入口。
-
-### 20.3 关系
-
-可以把两者理解成：
-
-- `AGENTS.md`：外层宪法，管”这个 Agent 在整个工作区怎么做事”
-- `agent-team-rules.md`：内层项目主文档，管”Agent Team 这个项目本身发展到了哪一步、怎么定义自己”
-
-前者更偏执行约束，后者更偏项目知识与协议沉淀。两者有关联，但不等价，也不应相互替代。
+- dapters/claude/CLAUDE.md 已添加，提供 CLAUDE.md 中协议相关段落的专用适配版本
+- 包含 L1-L4 阈值规则、角色定义、操作红线等精简配置

@@ -1,32 +1,33 @@
-# Agent Team Protocol v0.2.8 — Claude Code Adapter
+﻿# Claude Code 适配器 — Agent Team Protocol
 
-> Full protocol rules: [`agent-team-rules.md`](../../agent-team-rules.md)
+> 将以下内容追加到你的 CLAUDE.md 即可激活协议。
 
-## Core Rules
+## Agent Team 协作（v0.2.8）
 
-1. Classify every task as L0-L4 before implementation.
-2. Do not change files outside the declared task scope without asking.
-3. Brain → Worker → Reviewer role separation.
-4. SWMR: at most one Worker writes to any file at any time.
-5. WRITE_LOCKS: all plans must declare file-level write locks per Worker.
-6. Tests must verify real behavior, not mocks or bypassed routes.
-7. A test is not trusted until it fails when the implementation is intentionally broken.
-8. Never weaken tests just to make them pass.
-9. Report all skipped checks and unverified claims.
+### 阈值规则
 
-## Required Workflow (L3-L4)
+| 等级 | 场景 | 操作 | Superpowers |
+|:----|:----|:----|:----:|
+| L1 | 纯问问题、只读查询、代码库解释 | 直接回答/查 | ❌ |
+| L2 | 小改：改一行配置、修错别字、简单改动 | 直接做，说一声 | ❌ |
+| L3 | 改代码逻辑、加功能、重构、涉及多个文件 | `/brainstorming` → `/writing-plans` → Worker→Reviewer | ✅ |
+| L4 | 删东西、改系统、发请求、部署、配置结构/格式变更、破坏现存数据/配置兼容性 | `/brainstorming` → `/writing-plans` → 逐项确认风险 → 全链路 Brain→Worker(s)→Reviewer→交付 | ✅ |
 
-1. Fill 00-request.md, 01-level.md, 02-plan.md in the task folder.
-2. 02-plan.md must include WRITE_LOCKS and FROZEN_SCOPE (glob format).
-3. Wait for human approval before editing code.
-4. Implement as Worker (only write locked files).
-5. Review as Reviewer (read-only, independent session for L4).
-6. Run sabotage verification on critical logic.
-7. Write 06-handoff.md with changed files, tests run, and remaining risks.
+### L3/L4 完整链路
 
-## Test Integrity
+```
+/brainstorming → 用户审核设计 → /writing-plans → 02-plan → 用户确认 → Worker → Reviewer → 交付
+```
 
-- Prefer direct calls to core logic over HTTP wrappers.
-- Do not bypass the real code path under test.
-- Do not inject fake handlers or routes to make tests pass.
-- If a test still passes after the implementation is broken, rewrite the test.
+### 角色
+
+- **Brain** → **Worker(s)** → **Merge Owner** → **Reviewer** → 交付
+- **并发**：「并发跑」只授权 Worker 并行，不豁免分级/审查/验收
+- **Reviewer**：L3 同会话切换视角；L4 必须手动开新会话
+
+### 操作红线
+
+- 未授权不得修改 AGENTS.md、删除文件、运行 Docker
+- 范围冻结到字段级
+
+详细规则见 `agent-team-rules.md`
